@@ -4,9 +4,9 @@
 不同分支对应不同的lab
 
 - **util**: Xv6 and Unix utilities
-  - Boot xv6
-  - sleep
-  - pingpong
-  - primes
-  - find
-  - xargs
+  - $$\color{green}[easy]$$ Boot xv6
+  - $$\color{green}[easy]$$ sleep
+  - $$\color{green}[easy]$$ pingpong
+  - $$\color{blue}[moderate] \color{black}/ \color{red}[hard]$$ primes
+  - $$\color{blue}[moderate]$$ find
+  - $$\color{blue}[moderate]$$ xargs
