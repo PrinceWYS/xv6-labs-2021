@@ -659,3 +659,18 @@ procdump(void)
     printf("\n");
   }
 }
+
+uint64 count_running_process(void) {
+  uint64 running_process = 0;
+
+  struct proc *p;
+  for (p = proc; p < &proc[NPROC]; p++) {
+    if (p != myproc()) {
+      acquire(&p->lock);
+      running_process += (p->state != UNUSED);
+      release(&p->lock);
+    }
+  }
+
+  return running_process;
+}

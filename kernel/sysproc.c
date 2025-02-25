@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "spinlock.h"
 #include "proc.h"
+#include "sysinfo.h"
 
 uint64
 sys_exit(void)
@@ -105,6 +106,25 @@ uint64 sys_trace(void)
   }
 
   myproc()->syscall_trace = mask;
+
+  return 0;
+}
+
+uint64 sys_sysinfo(void) {
+  // 从用户态读入指针 存储 sysinfo 结果
+  uint64 addr;
+  if (argaddr(0, &addr) < 0) {
+    return -1;
+  }
+
+  struct sysinfo info;
+  info.freemem = count_freemem();
+  info.nproc = count_running_process();
+
+  if (copyout(myproc()->pagetable, addr, (char *)&info, sizeof(info)) < 0) {
+    return -1;
+  }
+
 
   return 0;
 }
