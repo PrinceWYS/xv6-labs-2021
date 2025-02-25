@@ -10,3 +10,6 @@
   - $$\color{blue}[moderate] \color{black}/ \color{red}[hard]$$ primes
   - $$\color{blue}[moderate]$$ find
   - $$\color{blue}[moderate]$$ xargs
+- **system calls**
+  - $$\color{blue}[moderate]$$ System call tracing
+  - $$\color{blue}[moderate]$$ Sysinfo
