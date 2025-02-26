@@ -442,7 +442,7 @@ void vmprint(pagetable_t page, uint level) {
   for (int i = 0; i < 512; i++) {
     pte_t pte = page[i];
     if (pte & PTE_V) {
-      for (int j = 0; j < level; j++) {
+      for (int j = 0; j <= level; j++) {
         printf(" ..");
       }
       uint64 child = PTE2PA(pte);
