@@ -13,3 +13,7 @@
 - **system calls**
   - $$\color{blue}[moderate]$$ System call tracing
   - $$\color{blue}[moderate]$$ Sysinfo
+- **page tables**
+  - $$\color{green}[easy]$$ Speed up system calls
+  - $$\color{green}[easy]$$ Print a page table
+  - $$\color{red}[hard]$$ Detecting which pages have been accessed
