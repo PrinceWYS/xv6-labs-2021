@@ -17,3 +17,6 @@
   - $$\color{green}[easy]$$ Speed up system calls
   - $$\color{green}[easy]$$ Print a page table
   - $$\color{red}[hard]$$ Detecting which pages have been accessed
+- **traps**
+  - $$\color{blue}[moderate]$$ Backtrace
+  - $$\color{red}[hard]$$ Alarm
