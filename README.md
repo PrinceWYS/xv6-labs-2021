@@ -20,3 +20,5 @@
 - **traps**
   - $$\color{blue}[moderate]$$ Backtrace
   - $$\color{red}[hard]$$ Alarm
+- **Copy-on-Write Fork for xv6**
+  - $$\color{red}[hard]$$ Implement copy-on write
