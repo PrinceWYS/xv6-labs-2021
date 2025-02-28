@@ -291,6 +291,50 @@ uvmfree(pagetable_t pagetable, uint64 sz)
   freewalk(pagetable);
 }
 
+int uncopied(pagetable_t pagetable, uint64 va) {
+  if (va >= MAXVA) {
+    return 0;
+  }
+
+  pte_t* pte = walk(pagetable, va, 0);
+  if (pte == 0) {
+    return 0;
+  }
+  if ((*pte & (PTE_U | PTE_V)) == 0) {
+    return 0;
+  }
+
+  return *pte & PTE_C;
+}
+
+int uvmcowcopy(pagetable_t pagetable, uint64 va) {
+  pte_t* pte = walk(pagetable, va, 0);
+  uint64 perm = PTE_FLAGS(*pte);
+
+  if (pte == 0) {
+    return -1;
+  }
+  uint64 pa = PTE2PA(*pte);
+
+  uint64 newpage = (uint64)kalloc();
+  if (newpage == 0) {
+    return -1;
+  }
+
+  perm &= (~PTE_C);
+  perm |= PTE_W;
+
+  memmove((void *)newpage, (void *)pa, PGSIZE);
+  uvmunmap(pagetable, PGROUNDDOWN(va), 1, 1);
+
+  if (mappages(pagetable, PGROUNDDOWN(va), PGSIZE, newpage, perm) < 0) {
+    kfree((void *)newpage);
+    return -1;
+  }
+
+  return 0;
+}
+
 // Given a parent process's page table, copy
 // its memory into a child's page table.
 // Copies both the page table and the
@@ -303,7 +347,7 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
   pte_t *pte;
   uint64 pa, i;
   uint flags;
-  char *mem;
+  // char *mem;
 
   for(i = 0; i < sz; i += PGSIZE){
     if((pte = walk(old, i, 0)) == 0)
@@ -311,14 +355,19 @@ uvmcopy(pagetable_t old, pagetable_t new, uint64 sz)
     if((*pte & PTE_V) == 0)
       panic("uvmcopy: page not present");
     pa = PTE2PA(*pte);
+
+    *pte &= (~PTE_W);
+    *pte |= PTE_C;
     flags = PTE_FLAGS(*pte);
-    if((mem = kalloc()) == 0)
-      goto err;
-    memmove(mem, (char*)pa, PGSIZE);
-    if(mappages(new, i, PGSIZE, (uint64)mem, flags) != 0){
-      kfree(mem);
+    // if((mem = kalloc()) == 0)
+    //   goto err;
+    // memmove(mem, (char*)pa, PGSIZE);
+    if(mappages(new, i, PGSIZE, (uint64)pa, flags) != 0){
+      // kfree(mem);
       goto err;
     }
+
+    krefpage((void *)pa);
   }
   return 0;
 
@@ -350,6 +399,11 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 
   while(len > 0){
     va0 = PGROUNDDOWN(dstva);
+    if (uncopied(pagetable, va0)) {
+      if (uvmcowcopy(pagetable, va0) < 0) {
+        return -1;
+      }
+    }
     pa0 = walkaddr(pagetable, va0);
     if(pa0 == 0)
       return -1;
