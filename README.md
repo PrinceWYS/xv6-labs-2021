@@ -22,3 +22,7 @@
   - $$\color{red}[hard]$$ Alarm
 - **Copy-on-Write Fork for xv6**
   - $$\color{red}[hard]$$ Implement copy-on write
+- **Multithreading**
+  - $$\color{blue}[moderate]$$ Uthread: switching between threads
+  - $$\color{blue}[moderate]$$ Using threads
+  - $$\color{blue}[moderate]$$ Barrier
