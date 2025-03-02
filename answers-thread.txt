@@ -1,0 +1,4 @@
+Q: Why are there missing keys with 2 threads, but not with 1 thread?
+A:
+If k1, k2 belong to the same bucket, and now they try to insert into the hashtable.
+One could be covered by the other.
