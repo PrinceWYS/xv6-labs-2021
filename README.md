@@ -26,3 +26,5 @@
   - $$\color{blue}[moderate]$$ Uthread: switching between threads
   - $$\color{blue}[moderate]$$ Using threads
   - $$\color{blue}[moderate]$$ Barrier
+- **networking**
+  - $$\color{red}[hard]$$ network
