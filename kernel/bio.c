@@ -23,7 +23,7 @@
 #include "fs.h"
 #include "buf.h"
 
-#define BACKET_HASH(dev, blk) (((dev << 27) | blk) % BUCKET_SIZE)
+#define BUCKET_HASH(dev, blk) (((dev << 27) | blk) % BUCKET_SIZE)
 
 struct {
   // struct spinlock lock;
@@ -38,24 +38,24 @@ struct {
   // struct buf head;
 } bcache;
 
+static inline void bbufmap_insert(uint key, struct buf *b) {
+  b->next = bcache.bhash_head[key].next;
+  bcache.bhash_head[key].next = b;
+}
+
+static inline struct buf* bbufmap_search(uint key, uint dev, uint blockno) {
+  struct buf* b;
+  for (b = bcache.bhash_head[key].next; b; b = b->next) {
+    if (b->dev == dev && b->blockno == blockno && !b->trash) {
+      return b;
+    }
+  }
+  return 0;
+}
+
 void
 binit(void)
 {
-  // struct buf *b;
-
-  // initlock(&bcache.lock, "bcache");
-
-  // // Create linked list of buffers
-  // bcache.head.prev = &bcache.head;
-  // bcache.head.next = &bcache.head;
-  // for(b = bcache.buf; b < bcache.buf+NBUF; b++){
-  //   b->next = bcache.head.next;
-  //   b->prev = &bcache.head;
-  //   initsleeplock(&b->lock, "buffer");
-  //   bcache.head.next->prev = b;
-  //   bcache.head.next = b;
-  // }
-
   for (int i = 0; i < BUCKET_SIZE; i++) {
     initlock(&bcache.bhash_lock[i], "bcache buf lock");
     bcache.bhash_head[i].next = 0;
@@ -66,8 +66,11 @@ binit(void)
     initsleeplock(&b->lock, "buf sleep lock");
     b->lastuse = 0;
     b->refcnt = 0;
-    b->next = bcache.bhash_head[0].next;
-    bcache.bhash_head[0].next = b;
+    b->valid = 0;
+    b->trash = 1;
+    // b->next = bcache.bhash_head[0].next;
+    // bcache.bhash_head[0].next = b;
+    bbufmap_insert(i % BUCKET_SIZE, b);
   }
 }
 
@@ -108,53 +111,116 @@ bget(uint dev, uint blockno)
 {
   struct buf *b;
 
-  uint key = BACKET_HASH(dev, blockno);
+  uint key = BUCKET_HASH(dev, blockno);
 
   acquire(&bcache.bhash_lock[key]);
 
   // Is the block already cached?
-  for(b = bcache.bhash_head[key].next; b; b = b->next){
-    if(b->dev == dev && b->blockno == blockno){
-      b->refcnt++;
-      release(&bcache.bhash_lock[key]);
-      acquiresleep(&b->lock);
-      return b;
-    }
+  if ((b = bbufmap_search(key, dev, blockno))) {
+    b->refcnt += 1;
+    release(&bcache.bhash_lock[key]);
+    acquiresleep(&b->lock);
+    return b;
   }
 
   release(&bcache.bhash_lock[key]);
-  int lru_bkt;
-  struct buf* pre_lru = bfind_prelru(&lru_bkt);
-  if (pre_lru == 0) {
-    panic("bget: no buffers\n");
-  }
+  struct buf *before_least = 0;
+  uint holding_bucket = -1;
+  for (int i = 0; i < BUCKET_SIZE; i++) {
+    acquire(&bcache.bhash_lock[i]);
+    uint found = 0;
+    for (b = &bcache.bhash_head[i]; b->next; b = b->next) {
+      if ((b->trash || b->next->refcnt == 0) && (!before_least || b->next->lastuse < before_least->lastuse)) {
+        before_least = b;
+        found = 1;
+      }
+    }
 
-  struct buf* lru = pre_lru->next;
-  pre_lru->next = lru->next;
-  release(&bcache.bhash_lock[lru_bkt]);
-
-  acquire(&bcache.bhash_lock[key]);
-  for(b = bcache.bhash_head[key].next; b; b = b->next){
-    if (b->dev == dev && b->blockno == blockno) {
-      b->refcnt++;
-      release(&bcache.bhash_lock[key]);
-      acquiresleep(&b->lock);
-      return b;
+    if (!found) {
+      release(&bcache.bhash_lock[i]);
+    }
+    else {
+      if (holding_bucket != -1) {
+        release(&bcache.bhash_lock[holding_bucket]);
+      }
+      holding_bucket = i;
     }
   }
 
-  lru->next = bcache.bhash_head[key].next;
-  bcache.bhash_head[key].next = lru;
+  if (!before_least) {
+    panic("bget: no buffers");
+  }
 
-  lru->dev = dev;
-  lru->blockno = blockno;
-  lru->valid = 0;
-  lru->refcnt = 1;
+  struct buf* newbuf = before_least->next;
+  if (holding_bucket != key) {
+    before_least->next = newbuf->next;
+    release(&bcache.bhash_lock[holding_bucket]);
+    acquire(&bcache.bhash_lock[key]);
+  }
 
+  if ((b = bbufmap_search(key, dev, blockno))) {
+    b->refcnt += 1;
+
+    if (holding_bucket != key) {
+      newbuf->trash = 1;
+      newbuf->lastuse = 0;
+      bbufmap_insert(key, newbuf);
+    }
+    else {
+
+    }
+    release(&bcache.bhash_lock[key]);
+    acquiresleep(&b->lock);
+    return b;
+  }
+
+  if (holding_bucket != key) {
+    bbufmap_insert(key, newbuf);
+  }
+
+  newbuf->trash = 0;
+  newbuf->dev = dev;
+  newbuf->blockno = blockno;
+  newbuf->refcnt = 1;
+  newbuf->valid = 0;
   release(&bcache.bhash_lock[key]);
-  acquiresleep(&lru->lock);
+  acquiresleep(&newbuf->lock);
 
-  return lru;
+  return newbuf;
+
+
+  // int lru_bkt;
+  // struct buf* pre_lru = bfind_prelru(&lru_bkt);
+  // if (pre_lru == 0) {
+  //   panic("bget: no buffers\n");
+  // }
+
+  // struct buf* lru = pre_lru->next;
+  // pre_lru->next = lru->next;
+  // release(&bcache.bhash_lock[lru_bkt]);
+
+  // acquire(&bcache.bhash_lock[key]);
+  // for(b = bcache.bhash_head[key].next; b; b = b->next){
+  //   if (b->dev == dev && b->blockno == blockno) {
+  //     b->refcnt++;
+  //     release(&bcache.bhash_lock[key]);
+  //     acquiresleep(&b->lock);
+  //     return b;
+  //   }
+  // }
+
+  // lru->next = bcache.bhash_head[key].next;
+  // bcache.bhash_head[key].next = lru;
+
+  // lru->dev = dev;
+  // lru->blockno = blockno;
+  // lru->valid = 0;
+  // lru->refcnt = 1;
+
+  // release(&bcache.bhash_lock[key]);
+  // acquiresleep(&lru->lock);
+
+  // return lru;
 }
 
 // Return a locked buf with the contents of the indicated block.
@@ -190,7 +256,7 @@ brelse(struct buf *b)
 
   releasesleep(&b->lock);
 
-  uint key = BACKET_HASH(b->dev, b->blockno);
+  uint key = BUCKET_HASH(b->dev, b->blockno);
   acquire(&bcache.bhash_lock[key]);
   b->refcnt--;
   if (b->refcnt == 0) {
@@ -203,7 +269,7 @@ brelse(struct buf *b)
 
 void
 bpin(struct buf *b) {
-  uint key = BACKET_HASH(b->dev, b->blockno);
+  uint key = BUCKET_HASH(b->dev, b->blockno);
   acquire(&bcache.bhash_lock[key]);
   b->refcnt++;
   release(&bcache.bhash_lock[key]);
@@ -211,7 +277,7 @@ bpin(struct buf *b) {
 
 void
 bunpin(struct buf *b) {
-  uint key = BACKET_HASH(b->dev, b->blockno);
+  uint key = BUCKET_HASH(b->dev, b->blockno);
   acquire(&bcache.bhash_lock[key]);
   b->refcnt--;
   release(&bcache.bhash_lock[key]);
