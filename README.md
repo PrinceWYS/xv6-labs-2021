@@ -28,3 +28,6 @@
   - $$\color{blue}[moderate]$$ Barrier
 - **networking**
   - $$\color{red}[hard]$$ network
+- **locks**
+  - $$\color{blue}[moderate]$$ Memory allocator
+  - $$\color{red}[hard]$$ Buffer cache
