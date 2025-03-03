@@ -13,3 +13,5 @@
 #define MAXPATH      128   // maximum file path name
 
 #define STEAL_CNT    64    // maximum steal pages
+
+#define BUCKET_SIZE  13    // bucket size
