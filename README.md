@@ -31,3 +31,6 @@
 - **locks**
   - $$\color{blue}[moderate]$$ Memory allocator
   - $$\color{red}[hard]$$ Buffer cache
+- **file system**
+  - $$\color{blue}[moderate]$$ Large files
+  - $$\color{blue}[moderate]$$ Symbolic links
