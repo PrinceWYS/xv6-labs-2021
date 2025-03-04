@@ -6,6 +6,11 @@
 #include "proc.h"
 #include "defs.h"
 
+#include "sleeplock.h"
+#include "fcntl.h"
+#include "fs.h"
+#include "file.h"
+
 struct spinlock tickslock;
 uint ticks;
 
@@ -67,6 +72,12 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if ((r_scause() == 13) || r_scause() == 15) {
+    if (mmap_pagefault(r_stval()) < 0) {
+      printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
+      printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
+      p->killed = 1;
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -218,3 +229,59 @@ devintr()
   }
 }
 
+struct mmap_vma* get_vma_by_addr(uint64 addr) {
+  struct proc* p = myproc();
+  for (int i = 0; i < VMA_SIZE; i++) {
+    if (p->vma[i].in_use && addr >= p->vma[i].addr && addr < p->vma[i].addr + p->vma[i].size) {
+      return p->vma + i;
+    }
+  }
+  return 0;
+}
+
+int mmap_pagefault(uint64 addr) {
+  struct proc* p = myproc();
+  struct mmap_vma *cur_vma;
+
+  if ((cur_vma = get_vma_by_addr(addr)) == 0) {
+    return -1;
+  }
+
+  if (!cur_vma->file->readable && r_scause() == 13 && cur_vma->flags & MAP_SHARED) {
+    return -1;
+  }
+  if (!cur_vma->file->writable && r_scause() == 15 && cur_vma->flags & MAP_SHARED) {
+    return -1;
+  }
+
+  uint64 pg_addr = PGROUNDDOWN(addr);
+  uint64 pa = (uint64)kalloc();
+  if (!pa) {
+    return -1;
+  }
+  memset((void*)pa, 0, PGSIZE);
+
+  int perm = PTE_U | PTE_V;
+  if (cur_vma->port & PROT_READ) {
+    perm |= PTE_R;
+  }
+  if (cur_vma->port & PROT_WRITE) {
+    perm |= PTE_W;
+  }
+  if (cur_vma->port & PROT_EXEC) {
+    perm |= PTE_X;
+  }
+
+  uint64 off = PGROUNDDOWN(addr - cur_vma->addr);
+
+  ilock(cur_vma->file->ip);
+  int rdret;
+  if ((rdret = readi(cur_vma->file->ip, 0, pa, off, PGSIZE)) == 0) {
+    iunlock(cur_vma->file->ip);
+    return -1;
+  }
+
+  iunlock(cur_vma->file->ip);
+  mappages(p->pagetable, pg_addr, PGSIZE, pa, perm);
+  return 0;
+}

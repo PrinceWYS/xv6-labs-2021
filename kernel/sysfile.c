@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "memlayout.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -483,4 +484,131 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64 get_mmap_space(uint64 size, struct mmap_vma* vmas, int* free_idx) {
+  *free_idx = -1;
+
+  uint64 lowest_addr = TRAPFRAME;
+
+  struct mmap_vma tmp;
+  tmp.addr = TRAPFRAME;
+  tmp.size = 0;
+
+  for (int i = 0; i <= VMA_SIZE; i++) {
+    if (vmas[i].in_use == 0 && i != VMA_SIZE) {
+      *free_idx = i;
+      continue;
+    }
+
+    uint64 end_pos = i == VMA_SIZE ? tmp.addr : PGROUNDDOWN(vmas[i].addr);
+    lowest_addr = end_pos < lowest_addr ? end_pos : lowest_addr;
+
+    for (int j = 0; j < VMA_SIZE; j++) {
+      if (vmas[j].in_use == 0 && i != VMA_SIZE) {
+        continue;
+      }
+      uint64 start_pos = i == VMA_SIZE ? tmp.addr + tmp.size : vmas[j].addr + vmas[j].size;
+
+      if (end_pos <= start_pos) {
+        continue;
+      }
+      if (end_pos - start_pos >= size) {
+        return start_pos;
+      }
+    }
+  }
+
+  return lowest_addr - size;
+}
+
+uint64 sys_mmap(void) {
+  uint64 addr, len, offset;
+  int port, flag, fd;
+  struct file* file;
+
+  if (argaddr(0, &addr) < 0) {
+    return -1;
+  }
+  if (argaddr(1, &len) < 0) {
+    return -1;
+  }
+  if (argint(2, &port) < 0) {
+    return -1;
+  }
+  if (argint(3, &flag) < 0) {
+    return -1;
+  }
+  if (argfd(4, &fd, &file) < 0) {
+    return -1;
+  }
+  if (argaddr(5, &offset) < 0) {
+    return -1;
+  }
+
+  struct proc *p = myproc();
+  if (addr || offset) {
+    printf("Only support addr == 0 and offset == 0\n");
+    return -1;
+  }
+  if (!file->writable && (port & PROT_WRITE) && (flag & MAP_SHARED)) {
+    return -1;
+  }
+
+  int unused_idx = -1;
+  uint64 start_addr = get_mmap_space(len, p->vma, &unused_idx);
+
+  if (unused_idx == -1) {
+    return -1;
+  }
+  if (start_addr <= p->sz) {
+    return -1;
+  }
+  struct mmap_vma *cur_vma = &p->vma[unused_idx];
+  cur_vma->file = file;
+  cur_vma->addr = start_addr;
+  cur_vma->in_use = 1;
+  cur_vma->flags = flag;
+  cur_vma->port = port;
+  cur_vma->size = len;
+  filedup(file);
+
+  return cur_vma->addr;
+}
+
+uint64 munmap(uint64 addr, uint64 len) {
+  struct proc *p = myproc();
+  struct mmap_vma *cur_vma = get_vma_by_addr(addr);
+  if (!cur_vma) {
+    return -1;
+  }
+
+  if (addr > cur_vma->addr && addr + len < cur_vma->addr + cur_vma->size) {
+    return -1;
+  }
+  mmap_writeback(p->pagetable, addr, len, cur_vma);
+
+  if (addr == cur_vma->addr) {
+    cur_vma->addr += len;
+  }
+  cur_vma->size -= len;
+
+  if (cur_vma->size <= 0) {
+    fileclose(cur_vma->file);
+    cur_vma->in_use = 0;
+  }
+
+  return 0;
+}
+
+uint64 sys_munmap(void) {
+  uint64 addr, len;
+  if (argaddr(0, &addr) < 0) {
+    return -1;
+  }
+  if (argaddr(1, &len) < 0) {
+    return -1;
+  }
+
+  return munmap(addr, len);
 }

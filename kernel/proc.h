@@ -82,6 +82,16 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+#define VMA_SIZE 16
+struct mmap_vma {
+  int in_use;
+  uint64 addr;  // 起始地址
+  uint64 size;  // 大小
+  int port;
+  struct file *file;  // 映射的文件
+  int flags;    // shared or private
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -105,4 +115,6 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  struct mmap_vma vma[VMA_SIZE];
 };

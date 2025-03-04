@@ -315,6 +315,13 @@ fork(void)
   np->state = RUNNABLE;
   release(&np->lock);
 
+  for (int i = 0; i < VMA_SIZE; i++){
+    if(p->vma[i].in_use){
+      np->vma[i] = p->vma[i]; 
+      filedup(p->vma[i].file);
+    }
+  }
+
   return pid;
 }
 
@@ -344,6 +351,14 @@ exit(int status)
   if(p == initproc)
     panic("init exiting");
 
+  for (int i = 0; i < VMA_SIZE; i++) {
+    if (p->vma[i].in_use) {
+      if (munmap(p->vma[i].addr, p->vma[i].size)) {
+        panic("exit: munmap");
+      }
+    }
+  }
+  
   // Close all open files.
   for(int fd = 0; fd < NOFILE; fd++){
     if(p->ofile[fd]){

@@ -6,6 +6,11 @@
 #include "defs.h"
 #include "fs.h"
 
+#include "spinlock.h"
+#include "proc.h"
+#include "fcntl.h"
+#include "sleeplock.h"
+#include "file.h"
 /*
  * the kernel's page table.
  */
@@ -431,4 +436,31 @@ copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
   } else {
     return -1;
   }
+}
+
+int mmap_writeback(pagetable_t pagetable, uint64 src_va, uint64 len, struct mmap_vma *vma) {
+  uint64 a;
+  pte_t *pte;
+  for (a = PGROUNDDOWN(src_va); a < PGROUNDDOWN(src_va + len); a += PGSIZE) {
+    if ((pte = walk(pagetable, a, 0)) == 0) {
+      panic("mmap writeback walk");
+    }
+    if (PTE_FLAGS(*pte) == PTE_V) {
+      panic("Not leaf");
+    }
+    if (!(*pte & PTE_V)) {
+      continue;
+    }
+    
+    if ((*pte & PTE_D) && (vma->flags == MAP_SHARED)) {
+      begin_op();
+      ilock(vma->file->ip);
+      writei(vma->file->ip, 1, a, a - src_va, PGSIZE);
+      iunlock(vma->file->ip);
+      end_op();
+    }
+    kfree((void*)PTE2PA(*pte));
+    *pte = 0;
+  }
+  return 0;
 }
