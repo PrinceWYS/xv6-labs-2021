@@ -34,3 +34,5 @@
 - **file system**
   - $$\color{blue}[moderate]$$ Large files
   - $$\color{blue}[moderate]$$ Symbolic links
+- **mmap**
+  - $$\color{red}[hard]$$ mmap
